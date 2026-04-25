@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mas-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: mas-ollama-pull
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+    command: >
+      sh -c "sleep 10 && ollama pull gemma"
+
+  webui:
+    build: ./webui
+    container_name: mas-webui
+    ports:
+      - "8501:8501"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./workspace:/workspace
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
