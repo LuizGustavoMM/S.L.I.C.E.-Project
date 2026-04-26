@@ -1,13 +1,14 @@
 import os
 import re
+import time
 import streamlit as st
-from groq import Groq
+from groq import Groq, RateLimitError
 
 # Desabilita telemetria do Streamlit
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
 st.set_page_config(page_title="Editor LLM Direto", layout="wide")
-st.title("Editor de Arquivos LLM - Modo Cirúrgico")
+st.title("Editor de Arquivos LLM - Modo Cirurgico")
 
 # Inicializacao do cliente Groq
 api_key = os.environ.get("GROQ_API_KEY")
@@ -19,7 +20,7 @@ client = Groq(api_key=api_key)
 
 base_path = "/workspace"
 
-st.markdown("### Configuração da Tarefa")
+st.markdown("### Configuracao da Tarefa")
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -38,9 +39,39 @@ def extrair_codigo(resposta_llm):
     match = re.search(padrao, resposta_llm, re.DOTALL)
     if match:
         return match.group(1).strip()
-    return resposta_llm.strip() # Fallback se a LLM nao usar markdown
+    return resposta_llm.strip()
 
-if st.button("Executar Modificação"):
+def chamar_llm_com_espera(client, system_prompt, user_prompt, max_tentativas=3):
+    """
+    Tenta chamar a API. Se bater no limite de uso da Groq (Rate Limit),
+    pausa a execucao, aguarda 60 segundos e tenta de novo.
+    """
+    tentativa = 0
+    while tentativa < max_tentativas:
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="llama-3.1-70b-versatile",
+                temperature=0.1,
+            )
+            return chat_completion.choices[0].message.content
+            
+        except RateLimitError as e:
+            tentativa += 1
+            st.warning(f"Limite de velocidade da Groq atingido! Pausando por 60 segundos... (Tentativa {tentativa}/{max_tentativas})")
+            time.sleep(60)
+            
+        except Exception as e:
+            st.error(f"Erro inesperado na API: {e}")
+            break
+            
+    return None
+
+
+if st.button("Executar Modificacao"):
     full_file_path = os.path.join(base_path, project_folder, target_file)
     
     if not os.path.exists(full_file_path):
@@ -59,40 +90,33 @@ if st.button("Executar Modificação"):
         st.info(f"Processando {target_file} via Groq (Llama 3.1 70B)...")
         
         # 2. Engenharia de Prompt Estrita
-        system_prompt = """Você é um Engenheiro de Software Sênior atuando como um compilador e editor de código.
-Sua única função é receber um código-fonte existente e uma instrução de alteração, e retornar o CÓDIGO COMPLETO reescrito e atualizado.
+        system_prompt = """Voce e um Engenheiro de Software Senior atuando como um compilador e editor de codigo.
+Sua unica funcao e receber um codigo-fonte existente e uma instrucao de alteracao, e retornar o CODIGO COMPLETO reescrito e atualizado.
 REGRAS ABSOLUTAS:
-1. NÃO explique o que você fez.
-2. NÃO use frases como "Aqui está o código" ou "Espero que isso ajude".
-3. Envolva toda a sua resposta em UM ÚNICO bloco de markdown (```).
-4. Retorne o arquivo inteiro, não apenas a parte modificada, para que o sistema possa sobrescrever o arquivo original diretamente."""
+1. NAO explique o que voce fez.
+2. NAO use frases como "Aqui esta o codigo" ou "Espero que isso ajude".
+3. Envolva toda a sua resposta em UM UNICO bloco de markdown (```).
+4. Retorne o arquivo inteiro, nao apenas a parte modificada, para que o sistema possa sobrescrever o arquivo original diretamente."""
 
-        user_prompt = f"INSTRUÇÃO DE ALTERAÇÃO:\n{user_task}\n\nCÓDIGO ORIGINAL:\n```\n{codigo_original}\n```"
+        user_prompt = f"INSTRUCAO DE ALTERACAO:\n{user_task}\n\nCODIGO ORIGINAL:\n```\n{codigo_original}\n```"
 
-        # 3. Chamada de API Direta
-        try:
-            with st.spinner("LLM reescrevendo o arquivo..."):
-                chat_completion = client.chat.completions.create(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    model="llama-3.1-70b-versatile",
-                    temperature=0.1, # Temperatura baixa para garantir determinismo e reduzir alucinacoes
-                )
-            
-            resposta_bruta = chat_completion.choices[0].message.content
-            
-            # 4. Extracao e Salvamento
+        # 3. Chamada de API Direta com Tratamento de Limite
+        with st.spinner("LLM reescrevendo o arquivo (isso pode pausar se o limite for atingido)..."):
+            resposta_bruta = chamar_llm_com_espera(client, system_prompt, user_prompt)
+        
+        # 4. Extracao e Salvamento (Apenas se a API respondeu com sucesso)
+        if resposta_bruta:
             codigo_final = extrair_codigo(resposta_bruta)
             
-            with open(full_file_path, 'w', encoding='utf-8') as f:
-                f.write(codigo_final)
+            try:
+                with open(full_file_path, 'w', encoding='utf-8') as f:
+                    f.write(codigo_final)
+                    
+                st.success("Arquivo sobrescrito com sucesso!")
                 
-            st.success("Arquivo sobrescrito com sucesso!")
-            
-            with st.expander("Ver Código Atualizado"):
-                st.code(codigo_final)
-                
-        except Exception as e:
-            st.error(f"Falha na comunicacao com a API ou no processamento: {e}")
+                with st.expander("Ver Codigo Atualizado"):
+                    st.code(codigo_final)
+            except Exception as e:
+                st.error(f"Erro ao salvar o arquivo no disco: {e}")
+        else:
+            st.error("Falha ao gerar o codigo apos esgotar as tentativas de API.")
