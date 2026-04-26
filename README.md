@@ -22,10 +22,10 @@ A arquitetura atual é 100% conteinerizada e enxuta, consumindo mínimos recurso
 
 ```text
 slice-project/
+├── .gitignore               # Configurado para ignorar o rastreio do código injetado
 ├── .env                     # Variáveis de ambiente (sua chave da Groq)
 ├── docker-compose.yml       # Orquestração do container Web
 ├── workspace/               # Volume montado para colocar os seus repositórios reais
-│   └── .gitignore           # Configurado para ignorar o rastreio do código injetado
 └── webui/
     ├── Dockerfile           # Imagem da interface
     ├── requirements.txt     # Dependências (Streamlit, Groq)
