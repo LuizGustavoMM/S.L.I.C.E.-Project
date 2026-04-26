@@ -4,13 +4,11 @@ import time
 import streamlit as st
 from groq import Groq, RateLimitError
 
-# Desabilita telemetria do Streamlit
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
 st.set_page_config(page_title="Editor LLM Direto", layout="wide")
 st.title("Editor de Arquivos LLM - Modo Cirurgico")
 
-# Inicializacao do cliente Groq
 api_key = os.environ.get("GROQ_API_KEY")
 if not api_key:
     st.error("GROQ_API_KEY nao encontrada nas variaveis de ambiente (.env).")
@@ -54,7 +52,7 @@ def chamar_llm_com_espera(client, system_prompt, user_prompt, max_tentativas=3):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                model="llama-3.1-70b-versatile",
+                model="llama-3.3-70b-versatile",
                 temperature=0.1,
             )
             return chat_completion.choices[0].message.content
@@ -79,7 +77,6 @@ if st.button("Executar Modificacao"):
     elif not user_task.strip():
         st.warning("Descreva o que precisa ser feito.")
     else:
-        # 1. Leitura do arquivo original
         try:
             with open(full_file_path, 'r', encoding='utf-8') as f:
                 codigo_original = f.read()
@@ -89,7 +86,6 @@ if st.button("Executar Modificacao"):
 
         st.info(f"Processando {target_file} via Groq (Llama 3.1 70B)...")
         
-        # 2. Engenharia de Prompt Estrita
         system_prompt = """Voce e um Engenheiro de Software Senior atuando como um compilador e editor de codigo.
 Sua unica funcao e receber um codigo-fonte existente e uma instrucao de alteracao, e retornar o CODIGO COMPLETO reescrito e atualizado.
 REGRAS ABSOLUTAS:
@@ -100,11 +96,9 @@ REGRAS ABSOLUTAS:
 
         user_prompt = f"INSTRUCAO DE ALTERACAO:\n{user_task}\n\nCODIGO ORIGINAL:\n```\n{codigo_original}\n```"
 
-        # 3. Chamada de API Direta com Tratamento de Limite
         with st.spinner("LLM reescrevendo o arquivo (isso pode pausar se o limite for atingido)..."):
             resposta_bruta = chamar_llm_com_espera(client, system_prompt, user_prompt)
-        
-        # 4. Extracao e Salvamento (Apenas se a API respondeu com sucesso)
+
         if resposta_bruta:
             codigo_final = extrair_codigo(resposta_bruta)
             
