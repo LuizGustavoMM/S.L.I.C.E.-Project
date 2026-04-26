@@ -7,7 +7,7 @@ from groq import Groq, RateLimitError
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
 st.set_page_config(page_title="Editor LLM Direto", layout="wide")
-st.title("Editor e Criador LLM - Modo Cirurgico")
+st.title("S.L.I.C.E - Surgical LLM Interface for Code Editing")
 
 api_key = os.environ.get("GROQ_API_KEY")
 if not api_key:
@@ -22,7 +22,7 @@ st.markdown("### Configuracao da Tarefa")
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.markdown("*(Deixe o Arquivo Alvo em branco para Criacao Livre)*")
+    st.markdown("*(Deixe o Arquivo Alvo em branco para Criação Livre)*")
     project_folder = st.text_input("Pasta do Projeto:", "")
     target_file = st.text_input("Arquivo Alvo (ex: src/main.py):", "")
 

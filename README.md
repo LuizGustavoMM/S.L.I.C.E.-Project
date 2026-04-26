@@ -1,74 +1,64 @@
-# Multi-Agent System (MAS) - Engenheiro de Software Local
+# S.L.I.C.E. - Surgical LLM Interface for Code Editing
 
-Este projeto implementa uma equipe de agentes de inteligência artificial autônomos utilizando CrewAI e Ollama para automação de tarefas de programação. O sistema é composto por três agentes (Pesquisador, Programador e Validador) que trabalham de forma sequencial para analisar, implementar e revisar código em repositórios locais.
+O **S.L.I.C.E.** é uma interface leve, rápida e cirúrgica para criação e edição automatizada de código utilizando Inteligência Artificial. Ele conecta o seu repositório local diretamente aos modelos mais avançados e rápidos do mercado através da API da Groq (Llama 3.3 70B).
 
-### Otimização de Hardware
+Este projeto nasceu de um pivô arquitetural. Inicialmente concebido como um Sistema Multi-Agente (MAS) rodando localmente, esbarramos nos altos custos computacionais e limitações de memória (VRAM) exigidos por frameworks de agentes. A solução foi **democratizar o projeto**: removemos as camadas de abstração, eliminamos a necessidade de uma GPU dedicada (como uma RTX 4060 ou 4090) e criamos um script Python puro com tratamento de resiliência. Qualquer desenvolvedor, em qualquer máquina, pode rodar esta ferramenta.
 
-A stack foi configurada para extrair o máximo desempenho da seguinte configuração:
-* **GPU:** NVIDIA GeForce RTX 4060 (8GB VRAM) - Utilizada para inferência acelerada via CUDA.
-* **CPU:** AMD Ryzen 5 5600X.
-* **RAM:** 16GB DDR4 3200 MHz (Configurado para operar dentro do limite de 15GB-16GB disponível).
-* **SO:** Windows 11 com Docker Desktop e WSL2 habilitado.
+## ✨ Como Funciona (Os Três Modos)
 
-O uso do modelo Gemma via Ollama com aceleração de GPU permite que o processamento dos agentes ocorra localmente com alta velocidade de geração de tokens, mantendo a privacidade dos dados do repositório.
+A interface é inteligente e define a sua intenção automaticamente com base nos campos que você preenche:
 
-### Pré-requisitos
+1. **Modo Edição (Cirúrgico):** Você aponta um arquivo existente e diz o que quer mudar. A ferramenta lê o arquivo, envia para a IA reescrever com as novas regras e sobrescreve o arquivo no seu disco local automaticamente.
 
-* Docker Desktop instalado com a opção "Use the WSL 2 based engine" ativada.
-* Drivers da NVIDIA atualizados no Windows (Game Ready ou Studio).
-* Integração do Docker com a sua distro WSL padrão habilitada nas configurações do Docker Desktop.
+2. **Modo Criação (Scaffolding):** Você digita o nome de um arquivo que *ainda não existe* e dá a instrução. A ferramenta gera o código do zero e já salva o novo arquivo na pasta correta do seu projeto.
 
-### Estrutura do Projeto
+3. **Modo Criação Livre:** Você não aponta nenhum arquivo, apenas faz um pedido de código solto. A ferramenta atua como um chat avançado, exibindo o código na tela para você copiar sem poluir seus diretórios.
+
+## 🚀 Resiliência de API (Rate Limit Handling)
+
+Como utilizamos a tier gratuita da Groq, o sistema possui **Backoff Exponencial** nativo. Se você pedir alterações gigantescas que estourem os limites de "Tokens Por Minuto" (TPM) da API, o S.L.I.C.E. não vai crashar. Ele interceptará o erro HTTP 429, pausará a execução silenciosamente por 60 segundos e tentará novamente de forma automática.
+
+## 🛠️ Estrutura do Projeto
+
+A arquitetura atual é 100% conteinerizada e enxuta, consumindo mínimos recursos da máquina host.
 
 ```text
-mas-project/
-├── docker-compose.yml       # Orquestração dos containers e automação de modelos
-├── workspace/               # Volume montado para seus repositórios
-│   └── .gitignore           # Configurado para ignorar conteúdos dentro do workspace
+slice-project/
+├── .env                     # Variáveis de ambiente (sua chave da Groq)
+├── docker-compose.yml       # Orquestração do container Web
+├── workspace/               # Volume montado para colocar os seus repositórios reais
+│   └── .gitignore           # Configurado para ignorar o rastreio do código injetado
 └── webui/
-    ├── Dockerfile           # Build da imagem da interface
-    ├── requirements.txt     # Bibliotecas Python (CrewAI, Streamlit, etc)
-    └── app.py               # Lógica de orquestração dos agentes
+    ├── Dockerfile           # Imagem da interface
+    ├── requirements.txt     # Dependências (Streamlit, Groq)
+    └── app.py               # Lógica de extração e UI
 ```
 
-### Instalação e Execução
+⚙️ Pré-requisitos e Instalação
+Você precisa ter o Docker e o Docker Compose instalados (no Windows, o Docker Desktop com WSL2 funciona perfeitamente).
 
-1. Certifique-se de que a pasta `workspace` existe na raiz do projeto.
-2. Abra o PowerShell na pasta raiz `mas-project`.
-3. Suba os serviços:
-   ```powershell
-   docker compose up -d
-   ```
-4. O sistema iniciará o download automático do modelo Gemma no primeiro boot através do container `ollama-pull`.
-5. Verifique o status da GPU no container:
-   ```powershell
-   docker exec -it mas-ollama nvidia-smi
-    ```
+Crie uma conta no Groq Console e gere uma API Key.
 
-### Como Comandar a MAS
+Na raiz do projeto, crie um arquivo chamado .env e adicione a sua chave:
 
-A interação é feita exclusivamente pela Web UI para garantir dinamismo entre diferentes repositórios sem reiniciar containers.
+Snippet de código```
+GROQ_API_KEY=sua_chave_secreta_aqui
+```
+▶️ Como Rodar
+Coloque o código-fonte que você deseja trabalhar dentro da pasta workspace.
 
-1. Acesse `http://localhost:8501` no navegador.
-2. No campo **Nome da pasta do projeto**, digite o nome do diretório que você colocou dentro de `workspace/`.
-3. No campo **Tarefa**, descreva a implementação ou correção desejada (ex: "Adicione um método de busca por ID na classe ProdutoService").
-4. Clique em **Iniciar MAS**.
-5. O console do navegador e os logs do Docker mostrarão o pensamento dos agentes:
-   - **Agente Pesquisador:** Varre o diretório e lê os arquivos necessários.
-   - **Agente Programador:** Realiza as alterações nos arquivos físicos.
-   - **Agente Validador:** Revisa o código escrito e aplica correções se encontrar erros.
+Abra o terminal na raiz do projeto e suba o serviço:
 
-### Fluxo de Revisão e Commit
+Bash```
+docker compose up -d --build
+```
+Acesse a interface web pelo navegador: http://localhost:8501.
 
-Para garantir a segurança do seu código, a MAS não possui permissão para realizar commits automáticos. 
+Preencha os campos de "Pasta do Projeto", "Arquivo Alvo" e a "Instrução" e clique em Executar Tarefa.
 
-1. Após a finalização da tarefa na Web UI, abra o seu editor de código (IDE).
-2. Revise as alterações feitas diretamente nos arquivos dentro da pasta `workspace`.
-3. Utilize o seu terminal Git local para realizar o `git add`, `git commit` e `git push` manualmente após validar a solução.
+Revise as alterações feitas pela IA no seu editor de código favorito (ex: VS Code) e faça os commits manualmente para garantir a segurança.
 
-### Gerenciamento de Modelos
-
-Para adicionar outros modelos mini à stack:
-```powershell
-docker exec -it mas-ollama ollama pull [nome-do-modelo]
+🛑 Para Parar a Aplicação
+Bash```
+docker compose down
 ```
