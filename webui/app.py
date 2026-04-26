@@ -1,121 +1,98 @@
 import os
+import re
 import streamlit as st
-from crewai import Agent, Task, Crew, Process
-from langchain_groq import ChatGroq
-from crewai_tools import DirectoryReadTool, FileReadTool
-from langchain.tools import tool
+from groq import Groq
 
+# Desabilita telemetria do Streamlit
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
-@tool("Escritor de Arquivos")
-def custom_file_writer(file_path: str, content: str) -> str:
-    try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        return f"Arquivo salvo com sucesso em: {file_path}"
-    except Exception as e:
-        return f"Erro ao escrever o arquivo: {str(e)}"
+st.set_page_config(page_title="Editor LLM Direto", layout="wide")
+st.title("Editor de Arquivos LLM - Modo Cirúrgico")
 
-st.set_page_config(page_title="MAS Interface", layout="wide")
-st.title("Interface de Comando - Multi-Agent System")
-
-groq_api_key = os.environ.get("GROQ_API_KEY")
-
-if not groq_api_key:
-    st.error("GROQ_API_KEY nao encontrada nas variaveis de ambiente.")
+# Inicializacao do cliente Groq
+api_key = os.environ.get("GROQ_API_KEY")
+if not api_key:
+    st.error("GROQ_API_KEY nao encontrada nas variaveis de ambiente (.env).")
     st.stop()
 
-llm_researcher = ChatGroq(
-    temperature=0,
-    model_name="llama-3.1-8b-instant",
-    api_key=groq_api_key
-)
-
-llm_coder = ChatGroq(
-    temperature=0,
-    model_name="llama-3.1-70b-versatile",
-    api_key=groq_api_key
-)
+client = Groq(api_key=api_key)
 
 base_path = "/workspace"
-project_folder = st.text_input("Nome da pasta do projeto dentro de /workspace:", "meu-projeto")
-user_task = st.text_area("Descreva a tarefa de programacao:")
 
-if st.button("Iniciar MAS"):
-    full_path = os.path.join(base_path, project_folder)
+st.markdown("### Configuração da Tarefa")
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    project_folder = st.text_input("Pasta do Projeto:", "meu-projeto")
+    target_file = st.text_input("Arquivo Alvo (ex: src/main.py):", "main.py")
+
+with col2:
+    user_task = st.text_area("O que deve ser alterado neste arquivo?", height=130)
+
+def extrair_codigo(resposta_llm):
+    """
+    Usa Regex para extrair apenas o bloco de codigo da resposta, 
+    ignorando textos conversacionais que quebram a compilacao.
+    """
+    padrao = r"```[\w]*\n(.*?)```"
+    match = re.search(padrao, resposta_llm, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return resposta_llm.strip() # Fallback se a LLM nao usar markdown
+
+if st.button("Executar Modificação"):
+    full_file_path = os.path.join(base_path, project_folder, target_file)
     
-    if not os.path.exists(full_path):
-        st.error(f"O diretorio {full_path} nao foi encontrado.")
+    if not os.path.exists(full_file_path):
+        st.error(f"Arquivo nao encontrado em: {full_file_path}")
     elif not user_task.strip():
-        st.warning("Forneca uma descricao da tarefa.")
+        st.warning("Descreva o que precisa ser feito.")
     else:
-        st.info(f"Iniciando agentes no diretorio: {full_path}")
+        # 1. Leitura do arquivo original
+        try:
+            with open(full_file_path, 'r', encoding='utf-8') as f:
+                codigo_original = f.read()
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo: {e}")
+            st.stop()
+
+        st.info(f"Processando {target_file} via Groq (Llama 3.1 70B)...")
         
-        directory_tool = DirectoryReadTool(directory=full_path)
-        file_read_tool = FileReadTool()
-        
-        researcher = Agent(
-            role="Pesquisador de Codigo",
-            goal="Analisar a estrutura do projeto e entender os arquivos existentes.",
-            backstory="Analista focado em arquitetura. Le apenas os arquivos estritamente necessarios para a tarefa.",
-            verbose=True,
-            allow_delegation=False,
-            tools=[directory_tool, file_read_tool],
-            llm=llm_researcher
-        )
+        # 2. Engenharia de Prompt Estrita
+        system_prompt = """Você é um Engenheiro de Software Sênior atuando como um compilador e editor de código.
+Sua única função é receber um código-fonte existente e uma instrução de alteração, e retornar o CÓDIGO COMPLETO reescrito e atualizado.
+REGRAS ABSOLUTAS:
+1. NÃO explique o que você fez.
+2. NÃO use frases como "Aqui está o código" ou "Espero que isso ajude".
+3. Envolva toda a sua resposta em UM ÚNICO bloco de markdown (```).
+4. Retorne o arquivo inteiro, não apenas a parte modificada, para que o sistema possa sobrescrever o arquivo original diretamente."""
 
-        coder = Agent(
-            role="Programador",
-            goal="Escrever codigo funcional com base na pesquisa.",
-            backstory="Desenvolvedor senior que escreve codigo e o salva no disco usando a ferramenta correta.",
-            verbose=True,
-            allow_delegation=False,
-            tools=[directory_tool, file_read_tool, custom_file_writer],
-            llm=llm_coder
-        )
+        user_prompt = f"INSTRUÇÃO DE ALTERAÇÃO:\n{user_task}\n\nCÓDIGO ORIGINAL:\n```\n{codigo_original}\n```"
 
-        reviewer = Agent(
-            role="Validador Senior",
-            goal="Revisar o codigo gerado e aplicar correcoes.",
-            backstory="Arquiteto criterioso. Corrige falhas logicas e valida a execucao da tarefa.",
-            verbose=True,
-            allow_delegation=False,
-            tools=[directory_tool, file_read_tool, custom_file_writer],
-            llm=llm_coder
-        )
-
-        task1 = Task(
-            description=f"Liste o diretorio {full_path}. Leia o conteudo apenas dos arquivos fundamentais para esta exigencia: {user_task}. Nao leia arquivos desnecessarios para poupar o limite de tokens.",
-            expected_output="Relatorio de arquivos e trechos de codigo relevantes.",
-            agent=researcher
-        )
-
-        task2 = Task(
-            description=f"Implemente a solucao baseada no relatorio anterior para: {user_task}. Obrigatoriamente use o Escritor de Arquivos para salvar em {full_path}.",
-            expected_output="Resumo das alteracoes feitas em disco.",
-            agent=coder
-        )
-
-        task3 = Task(
-            description=f"Inspecione os arquivos alterados em {full_path}. Valide a logica para: {user_task}. Se achar erro, sobrescreva o arquivo corrigindo.",
-            expected_output="Veredito final aprovando as mudancas.",
-            agent=reviewer
-        )
-
-        crew = Crew(
-            agents=[researcher, coder, reviewer],
-            tasks=[task1, task2, task3],
-            process=Process.sequential,
-            verbose=2
-        )
-
-        with st.spinner("Agentes processando na Groq... acompanhe o terminal."):
-            try:
-                result = crew.kickoff()
-                st.success("Tarefa concluida!")
-                st.markdown("### Resultado Final:")
-                st.write(result)
-            except Exception as e:
-                st.error("Falha na execucao.")
-                st.write(e)
+        # 3. Chamada de API Direta
+        try:
+            with st.spinner("LLM reescrevendo o arquivo..."):
+                chat_completion = client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    model="llama-3.1-70b-versatile",
+                    temperature=0.1, # Temperatura baixa para garantir determinismo e reduzir alucinacoes
+                )
+            
+            resposta_bruta = chat_completion.choices[0].message.content
+            
+            # 4. Extracao e Salvamento
+            codigo_final = extrair_codigo(resposta_bruta)
+            
+            with open(full_file_path, 'w', encoding='utf-8') as f:
+                f.write(codigo_final)
+                
+            st.success("Arquivo sobrescrito com sucesso!")
+            
+            with st.expander("Ver Código Atualizado"):
+                st.code(codigo_final)
+                
+        except Exception as e:
+            st.error(f"Falha na comunicacao com a API ou no processamento: {e}")
