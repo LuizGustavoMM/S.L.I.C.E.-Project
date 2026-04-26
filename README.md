@@ -29,7 +29,7 @@ mas-project/
     ├── Dockerfile           # Build da imagem da interface
     ├── requirements.txt     # Bibliotecas Python (CrewAI, Streamlit, etc)
     └── app.py               # Lógica de orquestração dos agentes
-´´´
+```
 
 ### Instalação e Execução
 

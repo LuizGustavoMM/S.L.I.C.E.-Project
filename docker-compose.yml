@@ -24,7 +24,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
       - ollama
-    command: -c "sleep 15 && ollama pull gemma"
+    command: -c "sleep 15 && ollama pull llama3"
 
   webui:
     build: ./webui

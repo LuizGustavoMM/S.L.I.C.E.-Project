@@ -26,7 +26,11 @@ def custom_file_writer(file_path: str, content: str) -> str:
 st.set_page_config(page_title="MAS Interface", layout="wide")
 st.title("Interface de Comando - Multi-Agent System")
 
-llm = Ollama(model="gemma", base_url=os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
+llm = Ollama(
+    model="llama3", 
+    base_url=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+    num_ctx=8192
+)
 
 base_path = "/workspace"
 project_folder = st.text_input("Nome da pasta do projeto dentro de /workspace:", "meu-projeto")
