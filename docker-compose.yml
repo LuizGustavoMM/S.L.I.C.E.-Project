@@ -19,12 +19,12 @@ services:
   ollama-pull:
     image: ollama/ollama:latest
     container_name: mas-ollama-pull
+    entrypoint: /bin/sh
     environment:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
       - ollama
-    command: >
-      sh -c "sleep 10 && ollama pull gemma"
+    command: -c "sleep 15 && ollama pull gemma"
 
   webui:
     build: ./webui
