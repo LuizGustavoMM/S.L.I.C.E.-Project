@@ -7,7 +7,7 @@ from groq import Groq, RateLimitError
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
 st.set_page_config(page_title="Editor LLM Direto", layout="wide")
-st.title("Editor de Arquivos LLM - Modo Cirurgico")
+st.title("Editor e Criador LLM - Modo Cirurgico")
 
 api_key = os.environ.get("GROQ_API_KEY")
 if not api_key:
@@ -22,11 +22,12 @@ st.markdown("### Configuracao da Tarefa")
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    project_folder = st.text_input("Pasta do Projeto:", "meu-projeto")
-    target_file = st.text_input("Arquivo Alvo (ex: src/main.py):", "main.py")
+    st.markdown("*(Deixe o Arquivo Alvo em branco para Criacao Livre)*")
+    project_folder = st.text_input("Pasta do Projeto:", "")
+    target_file = st.text_input("Arquivo Alvo (ex: src/main.py):", "")
 
 with col2:
-    user_task = st.text_area("O que deve ser alterado neste arquivo?", height=130)
+    user_task = st.text_area("O que deve ser feito?", height=130)
 
 def extrair_codigo(resposta_llm):
     padrao = r"```[\w]*\n(.*)```"
@@ -60,49 +61,68 @@ def chamar_llm_com_espera(client, system_prompt, user_prompt, max_tentativas=3):
             
     return None
 
-
-if st.button("Executar Modificacao"):
-    full_file_path = os.path.join(base_path, project_folder, target_file)
-    
-    if not os.path.exists(full_file_path):
-        st.error(f"Arquivo nao encontrado em: {full_file_path}")
-    elif not user_task.strip():
+if st.button("Executar Tarefa"):
+    if not user_task.strip():
         st.warning("Descreva o que precisa ser feito.")
-    else:
-        try:
-            with open(full_file_path, 'r', encoding='utf-8') as f:
-                codigo_original = f.read()
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo: {e}")
-            st.stop()
+        st.stop()
 
-        st.info(f"Processando {target_file} via Groq (Llama 3.3 70B)...")
-        
+    modo_edicao = False
+    full_file_path = None
+    codigo_original = ""
+
+    if target_file.strip():
+        full_file_path = os.path.join(base_path, project_folder, target_file)
+        if os.path.exists(full_file_path):
+            modo_edicao = True
+            try:
+                with open(full_file_path, 'r', encoding='utf-8') as f:
+                    codigo_original = f.read()
+            except Exception as e:
+                st.error(f"Erro ao ler arquivo: {e}")
+                st.stop()
+
+    if modo_edicao:
+        st.info(f"Modo EDICAO: Modificando {target_file}...")
         system_prompt = """Voce e um Engenheiro de Software Senior atuando como um compilador e editor de codigo.
 Sua unica funcao e receber um codigo-fonte existente e uma instrucao de alteracao, e retornar o CODIGO COMPLETO reescrito e atualizado.
 REGRAS ABSOLUTAS:
 1. NAO explique o que voce fez.
-2. NAO use frases como "Aqui esta o codigo" ou "Espero que isso ajude".
+2. NAO use frases conversacionais.
 3. Envolva toda a sua resposta em UM UNICO bloco de markdown (```).
-4. Retorne o arquivo inteiro, nao apenas a parte modificada, para que o sistema possa sobrescrever o arquivo original diretamente."""
-
+4. Retorne o arquivo inteiro, nao apenas a parte modificada."""
         user_prompt = f"INSTRUCAO DE ALTERACAO:\n{user_task}\n\nCODIGO ORIGINAL:\n```\n{codigo_original}\n```"
-
-        with st.spinner("LLM reescrevendo o arquivo (isso pode pausar se o limite for atingido)..."):
-            resposta_bruta = chamar_llm_com_espera(client, system_prompt, user_prompt)
-
-        if resposta_bruta:
-            codigo_final = extrair_codigo(resposta_bruta)
+    else:
+        if full_file_path:
+            st.info(f"Modo CRIACAO: Gerando novo arquivo {target_file} do zero...")
+        else:
+            st.info("Modo CRIACAO LIVRE: Gerando codigo solto...")
             
+        system_prompt = """Voce e um Engenheiro de Software Senior atuando como um gerador de codigo.
+Sua unica funcao e receber uma instrucao e retornar o CODIGO COMPLETO gerado do zero.
+REGRAS ABSOLUTAS:
+1. NAO explique o que voce fez.
+2. NAO use frases conversacionais.
+3. Envolva toda a sua resposta em UM UNICO bloco de markdown (```)."""
+        user_prompt = f"INSTRUCAO DE CRIACAO:\n{user_task}"
+
+    with st.spinner("Processando na LLM..."):
+        resposta_bruta = chamar_llm_com_espera(client, system_prompt, user_prompt)
+
+    if resposta_bruta:
+        codigo_final = extrair_codigo(resposta_bruta)
+        
+        if full_file_path:
             try:
+                os.makedirs(os.path.dirname(full_file_path), exist_ok=True)
                 with open(full_file_path, 'w', encoding='utf-8') as f:
                     f.write(codigo_final)
-                    
-                st.success("Arquivo sobrescrito com sucesso!")
-                
-                with st.expander("Ver Codigo Atualizado"):
-                    st.code(codigo_final)
+                st.success(f"Arquivo {'sobrescrito' if modo_edicao else 'criado'} com sucesso em: {full_file_path}")
             except Exception as e:
                 st.error(f"Erro ao salvar o arquivo no disco: {e}")
         else:
-            st.error("Falha ao gerar o codigo apos esgotar as tentativas de API.")
+            st.success("Codigo gerado com sucesso!")
+            
+        with st.expander("Ver Codigo Gerado", expanded=True):
+            st.code(codigo_final)
+    else:
+        st.error("Falha ao gerar o codigo apos esgotar as tentativas da API.")
