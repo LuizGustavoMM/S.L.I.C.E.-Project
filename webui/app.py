@@ -29,21 +29,13 @@ with col2:
     user_task = st.text_area("O que deve ser alterado neste arquivo?", height=130)
 
 def extrair_codigo(resposta_llm):
-    """
-    Usa Regex para extrair apenas o bloco de codigo da resposta, 
-    ignorando textos conversacionais que quebram a compilacao.
-    """
-    padrao = r"```[\w]*\n(.*?)```"
+    padrao = r"```[\w]*\n(.*)```"
     match = re.search(padrao, resposta_llm, re.DOTALL)
     if match:
         return match.group(1).strip()
     return resposta_llm.strip()
 
 def chamar_llm_com_espera(client, system_prompt, user_prompt, max_tentativas=3):
-    """
-    Tenta chamar a API. Se bater no limite de uso da Groq (Rate Limit),
-    pausa a execucao, aguarda 60 segundos e tenta de novo.
-    """
     tentativa = 0
     while tentativa < max_tentativas:
         try:
@@ -84,7 +76,7 @@ if st.button("Executar Modificacao"):
             st.error(f"Erro ao ler arquivo: {e}")
             st.stop()
 
-        st.info(f"Processando {target_file} via Groq (Llama 3.1 70B)...")
+        st.info(f"Processando {target_file} via Groq (Llama 3.3 70B)...")
         
         system_prompt = """Voce e um Engenheiro de Software Senior atuando como um compilador e editor de codigo.
 Sua unica funcao e receber um codigo-fonte existente e uma instrucao de alteracao, e retornar o CODIGO COMPLETO reescrito e atualizado.
